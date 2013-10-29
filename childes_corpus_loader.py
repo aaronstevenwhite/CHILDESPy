@@ -50,6 +50,7 @@ class CHILDESTranscriptCollection(object):
             for fid in corpus.fileids():
                 participants = self._participant_extractor(corpus, fid, speaker)
                 age = self._age_extractor(corpus, fid)
+                mlu = self._mlu_extractor(corpus, fid)
 
                 if tagged:
                     raw_sentence_extractor = lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
@@ -58,7 +59,7 @@ class CHILDESTranscriptCollection(object):
 
                 fid_stripped = os.path.splitext(fid)[0]
 
-                transcripts[corpus_name][fid_stripped] = CHILDESTranscript(raw_sentence_extractor, participants, age, relation, strip_affix)
+                transcripts[corpus_name][fid_stripped] = CHILDESTranscript(raw_sentence_extractor, participants, age, mlu, relation, strip_affix)
 
         return transcripts
     
@@ -75,6 +76,9 @@ class CHILDESTranscriptCollection(object):
         except TypeError:
             return np.nan
 
+    def _mlu_extractor(self, corpus, fid):
+        return corpus.MLU(fid)[0]
+
     def _participant_extractor(self, corpus, fid, speaker):
         participants = corpus.participants(fid)[0]
         participants = [part for part in participants if re.findall(speaker, part)]
@@ -83,9 +87,10 @@ class CHILDESTranscriptCollection(object):
 
 class CHILDESTranscript(object):
 
-    def __init__(self, raw_sentence_extractor, participants, age, relation, strip_affix):
+    def __init__(self, raw_sentence_extractor, participants, age, mlu, relation, strip_affix):
         self.participants = participants
         self.age = age
+        self.mlu = mlu
 
         self.sentences, self.participants_by_sentence = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
         self._sentence_iter = (sentence for sentence in self.sentences)
@@ -104,9 +109,9 @@ class CHILDESTranscript(object):
             for sent in raw_sentence_extractor(part):
                 if sent:
                     if relation:
-                        unit = CHILDESDependencyParse(sent, self.age)
+                        unit = CHILDESDependencyParse(sent)
                     else:
-                        unit = CHILDESSentence(sent, self.age, strip_affix)
+                        unit = CHILDESSentence(sent, strip_affix)
                             
                     sentences.append(unit)
                     participants.append(part)
@@ -147,12 +152,7 @@ class CHILDESParsedSentences(CHILDESTranscriptCollection):
 
 class CHILDESSentence(object):
     
-    def __init__(self, sentence, age, strip_affix):
-        try:
-            self.age = np.int(age)
-        except ValueError:
-            self.age = np.nan
-
+    def __init__(self, sentence, strip_affix):
         ## Needs to be fixed to allow untagged sentences!
         if strip_affix:
             self.sentence = [(word[0].split('-')[0], word[1]) for word in sentence]
@@ -224,7 +224,7 @@ class CHILDESCooccurrenceMatrix(object):
     def _get_transcript_metadata(self, corpus_index, transcript_index):
         transcript = self.transcript_collection[corpus_index][transcript_index]
 
-        return transcript.age, transcript.participants_by_sentence
+        return transcript.age, transcript.mlu, transcript.participants_by_sentence
 
     def _within_sentence_cooccurrence(self):
         cooccurrence_metadata = {}
@@ -277,27 +277,33 @@ if __name__=='__main__':
 
     for corpus, transcripts in dists.iteritems():
         for child, dist in transcripts.iteritems():
-            age, speaker = metadata[corpus][child]
+            age, mlu, speaker = metadata[corpus][child]
             for word in dist.conditions():
                 sentence_indices = dist[word].samples()
                 sentence_indices.sort()
+
+                word, tag = word
+
                 for i, sent_index in enumerate(sentence_indices):
-                    
+
                     if i > 0:
-                        repetition_difference = sent_index - last_sent_index
-                        datum = [word[0], word[1], age, speaker[sent_index], corpus, child, repetition_difference]
-                        data.append(datum)
+                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, last_sent_index]
+                    else:
+                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, -1]
                         
+                    data.append(datum)
+
                     intra_sentence_repeat = dist[word][sent_index] - 1
 
                     for j in range(intra_sentence_repeat):
-                        datum = [word[0], word[1], age, speaker[sent_index], corpus, child, 0]
+                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, sent_index]
                         data.append(datum)
                     
                     last_sent_index = sent_index
     
-    data = pandas.DataFrame(data, columns=['word', 'tag', 'age', 'speaker', 'corpus', 'child', 'difference'])
-                    
+    data = pandas.DataFrame(data, columns=['word', 'tag', 'age', 'mlu', 'speaker', 'corpus', 'child', 'sent', 'lastsent'])
+
+    data.to_csv('/home/aaronsteven/CHILDESPy/bin/dispersion_counts/'+sys.argv[1]+'.csv', sep='\t', quoting=1)
 
     # corpus_list = ['bates', 
     #                'bernstein', 
