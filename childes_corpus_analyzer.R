@@ -3,6 +3,10 @@ library(plyr)
 library(reshape2)
 library(ggplot2)
 
+
+########################################################################################################
+
+
 corpus.loader <- function(corpus, datadir='~/CHILDESPy/bin/corpora/'){
     fullpath <- paste(datadir, corpus, '.csv', sep='')
     corpus <- read.table(fullpath, header=T)    
@@ -14,8 +18,8 @@ corpus.loader <- function(corpus, datadir='~/CHILDESPy/bin/corpora/'){
     corpus$speaker <- as.factor(corpus$speaker)
     corpus$corpus <- as.factor(corpus$corpus)
     corpus$child <- as.factor(corpus$child)
-    corpus$sent <- as.factor(corpus$sent)
-    corpus$lastsent <- as.factor(corpus$lastsent)
+    corpus$sent <- as.numeric(corpus$sent)
+    corpus$lastsent <- as.numeric(corpus$lastsent)
 
     return(corpus)
 }
@@ -30,6 +34,9 @@ add.word.freqs <- function(df){
 }
 
 add.sent.lengths <- function(df){
+    df$sent <- as.factor(df$sent)
+    df$lastsent <- as.factor(df$lastsent)
+
     df <- subset(df, lastsent != -1)
 
     sentlengths <- count(df, .(corpus, child, sent))
@@ -50,18 +57,100 @@ add.sent.lengths <- function(df){
     return(df)
 }
 
+########################################################################################################
+
+## load all corpora individually
+
 gleason <- corpus.loader('gleason')
 brown <- corpus.loader('brown')
 rollins <- corpus.loader('rollins')
 higginson <- corpus.loader('higginson')
 newengland <- corpus.loader('newengland')
 
-data <- rbind(gleason, brown, higginson, newengland)
+## merge all corpora
+
+data <- rbind(gleason, brown, rollins, higginson, newengland)
+
+## create a column that gives the number of utterances between each instance of a word type
+
+data$utterdiff <- data$sent - data$lastsent
+
+## create columns for word frequencies and sentence lengths
+
 data <- add.word.freqs(data)
 data <- add.sent.lengths(data)
+
+## create column that gives the number of utterances between each instance of a word type
+
+data$worddiff <- data$cumsentlength - data$cumlastsentlength
+
+## remove data points that do not have an age associated with them
+
+data <- subset(data, !is.na(age))
+
+## remove all tags except for: noun, verb, adjective, preposition, determiner, pronoun, and modal
 
 data.tagsub <- subset(data, tag=='n' | tag=='v' | tag=='adj' | tag=='prep' | tag=='det' | tag=='pro' | tag=='mod')
 data.tagsub$tag <- data.tagsub$tag[drop=T,]
 
+## remove all speakers except for: mother and father
+
 data.speakersub <- subset(data.tagsub, speaker == 'MOT' | speaker=='FAT')
 data.speakersub$speaker <- data.speakersub$speaker[drop=T,]
+
+## create the data frame we will be working worth
+
+data.cleaned <- data.speakersub
+
+## make noun the new reference level
+
+data.cleaned$tag <- relevel(data.cleaned$tag, 'n')
+
+########################################################################################################
+
+## set the plottng theme to black and white
+
+theme_set(theme_bw())
+
+## plot histograms showing the distribution of sentence lengths
+
+p.sentlength <- ggplot(data.cleaned, aes(x=sentlength, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black")
+p.sentlength.dens <- ggplot(data.cleaned, aes(x=sentlength)) + geom_density(h=5)
+
+## plot histograms showing the distribution of number of utterances between tokens of a word type
+
+p.utterdiff <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
+p.utterdiff.tag <- ggplot(data.cleaned, aes(x=utterdiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50))
+p.utterdiff.tag.dens <- ggplot(data.cleaned, aes(x=utterdiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
+
+## plot histograms showing the distribution of number of words between tokens of a word type
+
+p.worddiff <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
+p.worddiff.tag <- ggplot(data.cleaned, aes(x=worddiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50))
+p.worddiff.tag.dens <- ggplot(data.cleaned, aes(x=worddiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
+
+## plot dot plot showing the correlation between number of utterances and number of words between tokens of a word type
+
+p.utterword <- ggplot(data.cleaned, aes(x=utterdiff, y=worddiff)) + geom_point(alpha=.5) + geom_smooth(method="lm")
+
+########################################################################################################
+
+## get correlation (0.9798) between number of utterances and number of words between tokens of a word type
+
+utterword.cor <- cor(data.cleaned$utterdiff, data.cleaned$worddiff)
+
+## build intercept-only negative binomial model of word distances
+## then step-wise constructive-destructive selection procedure using AIC
+
+m.worddiff.interonly <- glm.nb(worddiff ~ 1, data=data.cleaned)
+m.worddiff <- step(m.worddiff.interonly, scope=~tag*age*log(wordfreq))
+
+## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
+
+## build intercept-only negative binomial model of word distances
+## then step-wise constructive-destructive selection procedure using AIC
+
+m.utterdiff.interonly <- glm.nb(utterdiff ~ 1, data=data.cleaned)
+m.utterdiff <- step(m.utterdiff.interonly, scope=~tag*age*log(wordfreq))
+
+## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
