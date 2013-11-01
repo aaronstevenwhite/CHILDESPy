@@ -69,6 +69,9 @@ class CHILDESMetaData(object):
 
         return [part for part in participants if re.findall(speaker_regex, part)]
 
+    def extract(self):
+        return self.age, self.mlu, self.participants
+
 
 class CHILDESTranscriptCollection(object):
 
@@ -119,7 +122,7 @@ class CHILDESTranscript(object):
     def __init__(self, raw_sentence_extractor, metadata, relation, strip_affix):
         self.metadata = metadata
 
-        self.sentences, self.participants_by_sentence = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
+        self.sentences = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
         self._sentence_iter = (sentence for sentence in self.sentences)
 
     def __iter__(self):
@@ -143,7 +146,9 @@ class CHILDESTranscript(object):
                     sentences.append(unit)
                     participants.append(part)
 
-        return sentences, participants
+        self.metadata.participants_by_sentence = participants ## this is ugly
+
+        return sentences
 
 
 class CHILDESStemmedSentences(CHILDESTranscriptCollection):
@@ -247,33 +252,23 @@ class CHILDESCooccurrenceMatrix(object):
             for word in sentence:
                 yield (word[0].lower(), word[1]), j
 
-    def _get_transcript_metadata(self, corpus_index, transcript_index):
-        transcript = self.transcript_collection[corpus_index][transcript_index]
-
-        return transcript.age, transcript.mlu, transcript.participants_by_sentence
-
     def _within_sentence_cooccurrence(self):
-        cooccurrence_metadata = {}
         condfreqdists = {}
-
         cooccurrence_generators = []
 
         for corpus_index in self.transcript_collection.get_corpus_indices():
             condfreqdists[corpus_index] = {}
-            cooccurrence_metadata[corpus_index] = {}
             for transcript_index in self.transcript_collection.get_transcript_indices(corpus_index):
                 cooccur_gen = self._create_cooccurrence_generator(corpus_index, transcript_index)
-                cooccurrence_generators.append(cooccur_gen)
 
                 if not self.collapse:
-                    cooccurrence_metadata[corpus_index][transcript_index] = self._get_transcript_metadata(corpus_index, transcript_index)
                     condfreqdists[corpus_index][transcript_index] = ConditionalFreqDist(cooccur_gen)
+                else:
+                    cooccurrence_generators.append(cooccur_gen)
 
         if self.collapse:
             chained_generators = itertools.chain(*cooccurrence_generators)
-            condfreqdists = ConditionalFreqDist(chained_generators)
-        else:
-            self.cooccurrence_metadata = cooccurrence_metadata
+            condfreqdists = ConditionalFreqDist(chained_generators)            
 
         self.condfreqdists = condfreqdists
 
@@ -296,14 +291,14 @@ def main(corpus_search_term):
 if __name__=='__main__':
     corpora, stemmed_sentences, cooccurrence_matrix = main(sys.argv[1])
 
-    metadata = cooccurrence_matrix.cooccurrence_metadata
     dists = cooccurrence_matrix.condfreqdists
 
     data = []
 
-    for corpus, transcripts in dists.iteritems():
-        for child, dist in transcripts.iteritems():
-            age, mlu, speaker = metadata[corpus][child]
+    for corpus_name, transcripts in dists.iteritems():
+        for transcript_name, dist in transcripts.iteritems():
+            metadata = stemmed_sentences[corpus_name][transcript_name].metdata
+            age, mlu, participants = metadata.extract()
             for word in dist.conditions():
                 sentence_indices = dist[word].samples()
                 sentence_indices.sort()
@@ -313,16 +308,16 @@ if __name__=='__main__':
                 for i, sent_index in enumerate(sentence_indices):
 
                     if i > 0:
-                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, last_sent_index]
+                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, last_sent_index]
                     else:
-                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, -1]
+                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, -1]
                         
                     data.append(datum)
 
                     intra_sentence_repeat = dist[word][sent_index] - 1
 
                     for j in range(intra_sentence_repeat):
-                        datum = [word, tag, age, mlu, speaker[sent_index], corpus, child, sent_index, sent_index]
+                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, sent_index]
                         data.append(datum)
                     
                     last_sent_index = sent_index
