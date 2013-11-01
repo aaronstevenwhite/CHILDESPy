@@ -71,6 +71,11 @@ newengland <- corpus.loader('newengland')
 
 data <- rbind(gleason, brown, rollins, higginson, newengland)
 
+##
+
+data$context <- 'play'
+data[data$corpus=='Dinner',]$context <- 'meal'
+
 ## create a column that gives the number of utterances between each instance of a word type
 
 data$utterdiff <- data$sent - data$lastsent
@@ -123,11 +128,17 @@ p.utterdiff <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(
 p.utterdiff.tag <- ggplot(data.cleaned, aes(x=utterdiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50))
 p.utterdiff.tag.dens <- ggplot(data.cleaned, aes(x=utterdiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
 
+p.utterdiff.tag.facet <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
+p.utterdiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=utterdiff)) + geom_density() + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
+
 ## plot histograms showing the distribution of number of words between tokens of a word type
 
 p.worddiff <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
 p.worddiff.tag <- ggplot(data.cleaned, aes(x=worddiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50))
 p.worddiff.tag.dens <- ggplot(data.cleaned, aes(x=worddiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
+
+p.worddiff.tag.facet <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
+p.worddiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=worddiff)) + geom_density() + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
 
 ## plot dot plot showing the correlation between number of utterances and number of words between tokens of a word type
 
@@ -154,3 +165,32 @@ m.utterdiff.interonly <- glm.nb(utterdiff ~ 1, data=data.cleaned)
 m.utterdiff <- step(m.utterdiff.interonly, scope=~tag*age*log(wordfreq))
 
 ## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
+
+########################################################################################################
+
+## add predictions for word and utterance differences
+
+data.cleaned$predword <- predict(m.worddiff)
+data.cleaned$predutter <- predict(m.utterdiff)
+
+## order tags by lexical v. functional
+
+data.cleaned$tag <- ordered(data.cleaned$tag, levels=c('n', 'adj', 'v', 'prep', 'mod', 'det', 'pro'))
+
+p.word.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, linetype=tag)) + geom_smooth(method="lm")
+p.word.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predword, linetype=tag)) + geom_smooth(method="lm")
+
+p.utter.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predutter, linetype=tag)) + geom_smooth(method="lm")
+p.utter.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predutter, linetype=tag)) + geom_smooth(method="lm")
+
+########################################################################################################
+
+## step-wise constructive-destructive selection procedure using AIC of word distances model
+
+m.worddiff.context <- step(m.worddiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+
+## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
+
+## step-wise constructive-destructive selection procedure using AIC of utterance distances model
+
+m.utterdiff.context <- step(m.utterdiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))

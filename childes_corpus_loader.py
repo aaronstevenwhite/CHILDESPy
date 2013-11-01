@@ -28,11 +28,55 @@ class CHILDESCorpora(object):
         return matches
 
 
+class CHILDESMetaData(object):
+
+    def __init__(self, corpus):
+        self.corpus = corpus
+        self.corpus_name = self._extract_corpus_name(corpus)
+
+    def _extract_corpus_name(self, corpus):
+        corpus_path = corpus.root.title()
+        corpus_name = os.path.basename(corpus_path)
+        
+        return corpus_name
+
+    def create_new_instance(self, fid):
+        transcript_metadata = CHILDESMetaData(self.corpus)
+
+        transcript_metadata._set_metadata(fid)
+
+        return transcript_metadata
+
+    def _set_meta_data(self, fid):
+        self.participants = self._participant_extractor(fid)
+        self.age = self._age_extractor(fid)
+        self.mlu = self._mlu_extractor(fid)
+
+
+    def _age_extractor(self, fid):
+        try:
+            age = self.corpus.age(fid)[0]
+            return np.int(self.corpus.convert_age(age))
+        except TypeError:
+            return np.nan
+
+    def _mlu_extractor(self, fid):
+        return self.corpus.MLU(fid)[0]
+
+
+    def _participant_extractor(self, fid, speaker_regex):
+        participants = self.corpus.participants(fid)[0]
+
+        return [part for part in participants if re.findall(speaker_regex, part)]
+
+
 class CHILDESTranscriptCollection(object):
 
     def __init__(self, corpora, corpus_search_term):
         self._corpora = corpora
         self._corpus_search_term = corpus_search_term
+
+        self._get_transcripts
 
     def __iter__(self):
         return self
@@ -40,57 +84,40 @@ class CHILDESTranscriptCollection(object):
     def next(self):
         return self._transcript_iter.next()
 
+    def __getitem__(self, corpus_name):
+        return self.transcripts[corpus_name]
+
     def _get_transcripts(self, speaker, stem, tagged, relation, strip_space, replace, strip_affix):
 
         transcripts = {}
+        corpus_search = self._corpora.search(self._corpus_search_term)
 
-        for corpus in self._corpora.search(self._corpus_search_term):
-            corpus_name = self._extract_corpus_name(corpus)
+        for corpus in corpus_search:
+            metadata_parent = CHILDESMetaData(corpus)
             transcripts[corpus_name] = {}
             for fid in corpus.fileids():
-                participants = self._participant_extractor(corpus, fid, speaker)
-                age = self._age_extractor(corpus, fid)
-                mlu = self._mlu_extractor(corpus, fid)
-
-                if tagged:
-                    raw_sentence_extractor = lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
-                else:
-                    raw_sentence_extractor = lambda part: corpus.sents(fid, part, stem, relation, strip_space, replace)
+                raw_sentence_extractor = self._create_raw_sentence_extractor(fid, part, stem, relation, strip_space, replace)
 
                 fid_stripped = os.path.splitext(fid)[0]
 
-                transcripts[corpus_name][fid_stripped] = CHILDESTranscript(raw_sentence_extractor, participants, age, mlu, relation, strip_affix)
+                transcript_metadata = metadata_parent.create_new_instance(fid)
 
-        return transcripts
-    
-    def _extract_corpus_name(self,corpus):
-        corpus_path = corpus.root.title()
-        corpus_name = os.path.basename(corpus_path)
-        
-        return corpus_name
+                transcripts[corpus_name][fid_stripped] = CHILDESTranscript(raw_sentence_extractor, transcript_metadata, relation, strip_affix)
 
-    def _age_extractor(self, corpus, fid):
-        try:
-            age = corpus.age(fid)[0]
-            return np.int(corpus.convert_age(age))
-        except TypeError:
-            return np.nan
+        self.transcripts = transcripts
 
-    def _mlu_extractor(self, corpus, fid):
-        return corpus.MLU(fid)[0]
 
-    def _participant_extractor(self, corpus, fid, speaker):
-        participants = corpus.participants(fid)[0]
-        participants = [part for part in participants if re.findall(speaker, part)]
+    def _create_raw_sentence_extractor(self, fid, part, stem, relation, strip_space, replace): ## the self here is ugly
+        if tagged:
+            return lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
+        else:
+            return lambda part: corpus.sents(fid, part, stem, relation, strip_space, replace)
 
-        return participants
 
 class CHILDESTranscript(object):
 
-    def __init__(self, raw_sentence_extractor, participants, age, mlu, relation, strip_affix):
-        self.participants = participants
-        self.age = age
-        self.mlu = mlu
+    def __init__(self, raw_sentence_extractor, metadata, relation, strip_affix):
+        self.metadata = metadata
 
         self.sentences, self.participants_by_sentence = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
         self._sentence_iter = (sentence for sentence in self.sentences)
@@ -117,7 +144,6 @@ class CHILDESTranscript(object):
                     participants.append(part)
 
         return sentences, participants
-
 
 
 class CHILDESStemmedSentences(CHILDESTranscriptCollection):
