@@ -40,15 +40,15 @@ class CHILDESMetaData(object):
         
         return corpus_name
 
-    def create_new_instance(self, fid):
+    def create_new_instance(self, fid, speaker_regex): ## I don't like how far speaker_regex has to get passed down; should be an attribute?
         transcript_metadata = CHILDESMetaData(self.corpus)
 
-        transcript_metadata._set_metadata(fid)
+        transcript_metadata._set_metadata(fid, speaker_regex)
 
         return transcript_metadata
 
-    def _set_meta_data(self, fid):
-        self.participants = self._participant_extractor(fid)
+    def _set_metadata(self, fid, speaker_regex):
+        self.participants = self._participant_extractor(fid, speaker_regex)
         self.age = self._age_extractor(fid)
         self.mlu = self._mlu_extractor(fid)
 
@@ -62,7 +62,6 @@ class CHILDESMetaData(object):
 
     def _mlu_extractor(self, fid):
         return self.corpus.MLU(fid)[0]
-
 
     def _participant_extractor(self, fid, speaker_regex):
         participants = self.corpus.participants(fid)[0]
@@ -79,8 +78,6 @@ class CHILDESTranscriptCollection(object):
         self._corpora = corpora
         self._corpus_search_term = corpus_search_term
 
-        self._get_transcripts
-
     def __iter__(self):
         return self
 
@@ -90,32 +87,59 @@ class CHILDESTranscriptCollection(object):
     def __getitem__(self, corpus_name):
         return self.transcripts[corpus_name]
 
-    def _get_transcripts(self, speaker, stem, tagged, relation, strip_space, replace, strip_affix):
+    def _get_transcripts(self, speaker_regex, stem, tagged, relation, strip_space, replace, strip_affix):
 
         transcripts = {}
         corpus_search = self._corpora.search(self._corpus_search_term)
 
         for corpus in corpus_search:
             metadata_parent = CHILDESMetaData(corpus)
+            corpus_name = metadata_parent.corpus_name
             transcripts[corpus_name] = {}
             for fid in corpus.fileids():
-                raw_sentence_extractor = self._create_raw_sentence_extractor(fid, part, stem, relation, strip_space, replace)
+                transcript_metadata = metadata_parent.create_new_instance(fid, speaker_regex)
+                if tagged:
+                    raw_sentence_extractor = lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
+                else:
+                    raw_sentence_extractor = lambda part: corpus.sents(fid, part, stem, relation, strip_space, replace)
 
                 fid_stripped = os.path.splitext(fid)[0]
 
-                transcript_metadata = metadata_parent.create_new_instance(fid)
-
                 transcripts[corpus_name][fid_stripped] = CHILDESTranscript(raw_sentence_extractor, transcript_metadata, relation, strip_affix)
 
-        self.transcripts = transcripts
+        return transcripts
+
+    def get_corpus_indices(self):
+        return self.transcripts.keys()
+
+    def get_transcript_indices(self, corpus_index):
+        return self.transcripts[corpus_index].keys()
 
 
-    def _create_raw_sentence_extractor(self, fid, part, stem, relation, strip_space, replace): ## the self here is ugly
-        if tagged:
-            return lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
-        else:
-            return lambda part: corpus.sents(fid, part, stem, relation, strip_space, replace)
+class CHILDESStemmedSentences(CHILDESTranscriptCollection):
 
+    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$', tagged=True, strip_affix=True):
+        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term)
+        
+        self.transcripts = self._get_stemmed_transcripts(speaker_regex=speaker_regex, tagged=tagged, strip_affix=strip_affix)
+        self._transcript_iter = (transcript for transcript in self.transcripts)
+
+    def _get_stemmed_transcripts(self, speaker_regex, tagged, strip_affix):
+        return self._get_transcripts(speaker_regex=speaker_regex, stem=True, tagged=tagged, relation=None, 
+                                     strip_space=True, replace=True, strip_affix=strip_affix)
+
+class CHILDESParsedSentences(CHILDESTranscriptCollection):
+
+    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$'):
+        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term)
+
+        self.transcripts = self._get_parsed_transcripts(speaker_regex=speaker_regex)
+        self._transcript_iter = (transcript for transcript in self.transcripts)
+
+    def _get_parsed_transcripts(self, speaker_regex):
+        return self._get_transcripts(speaker_regex=speaker_regex, stem=True, tagged=False, relation=True, 
+                                     strip_space=True, replace=True, strip_affix=False)
+        
 
 class CHILDESTranscript(object):
 
@@ -135,7 +159,7 @@ class CHILDESTranscript(object):
         sentences = []
         participants = []
 
-        for part in self.participants:
+        for part in self.metadata.participants:
             for sent in raw_sentence_extractor(part):
                 if sent:
                     if relation:
@@ -149,36 +173,6 @@ class CHILDESTranscript(object):
         self.metadata.participants_by_sentence = participants ## this is ugly
 
         return sentences
-
-
-class CHILDESStemmedSentences(CHILDESTranscriptCollection):
-
-    def __init__(self, corpora, corpus_search_term, speaker='^(?:(?!CHI).)*$', tagged=True, strip_affix=True):
-        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term)
-        
-        self.transcripts = self._get_stemmed_transcripts(speaker=speaker, tagged=tagged, strip_affix=strip_affix)
-        self._transcript_iter = (transcript for transcript in self.transcripts)
-
-    def __getitem__(self, item):
-        return self.transcripts[item]
-
-    def _get_stemmed_transcripts(self, speaker, tagged, strip_affix):
-        return self._get_transcripts(speaker=speaker, stem=True, tagged=tagged, relation=None, 
-                                     strip_space=True, replace=False, strip_affix=strip_affix)
-
-    def get_corpus_indices(self):
-        return self.transcripts.keys()
-
-    def get_transcript_indices(self, corpus_index):
-        return self.transcripts[corpus_index].keys()
-
-class CHILDESParsedSentences(CHILDESTranscriptCollection):
-
-    def __init__(self, corpora, corpus_search_term, speaker='^(?:(?!CHI).)*$'):
-        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term)
-        
-        self.sentences = self._get_sentences(speaker=speaker, relation=True)
-        self._sentence_iter = (sentence for sentence in self.sentences)
                 
 
 class CHILDESSentence(object):
@@ -202,9 +196,7 @@ class CHILDESSentence(object):
 
 class CHILDESDependencyParse(object):
 
-    def __init__(self, parse, age):
-        self.age = age 
-
+    def __init__(self, parse):
         self._format_parse(parse)
 
     def _format_parse(self, parse):
@@ -235,47 +227,106 @@ class CHILDESDependencyParse(object):
         self.parse = DataFrame(new_parse, columns=['word', 'pos', 'ind', 'pind', 'relation'])
 
 
-class CHILDESCooccurrenceMatrix(object):
+class CHILDESCooccurrenceCounts(object):
     
-    def __init__(self, transcript_collection, collapse=None):
+    def __init__(self, transcript_collection, sample_type='pos', frame=True, parent_condition=True, depth=1):
         self.transcript_collection = transcript_collection
-        self.collapse = collapse
 
-        if isinstance(transcript_collection, CHILDESStemmedSentences):
-            self._within_sentence_cooccurrence()
-        elif isinstance(transcript_collection, CHILDESParsedSentences):
-            self._dependency_cooccurrence(condition)
+        self.sample_type = sample_type
+        self.frame = frame
+        self.parent_condition = parent_condition
+        self.depth = depth # doesn't do anything yet
 
-    def _create_cooccurrence_generator(self, corpus_index, transcript_index):
+        self._create_freqdist_dict()
+
+    def _create_word_sent_cooccurrence_generator(self, corpus_index, transcript_index):
         transcript = self.transcript_collection[corpus_index][transcript_index]
         for j, sentence in enumerate(transcript):
             for word in sentence:
                 yield (word[0].lower(), word[1]), j
 
-    def _within_sentence_cooccurrence(self):
+    def _create_dependency_cooccurrence_generator(self, corpus_index, transcript_index):
+        transcript = self.transcript_collection[corpus_index][transcript_index]
+        for sentence in transcript:
+            parse = sentence.parse
+            for row_index in parse.T:
+                row = parse.ix[row_index]
+                if self.frame:
+                    child_rows = parse[parse.pind == row.ix['ind']]
+                    yield row.ix['word'], tuple(child_rows[self.sample_type])
+                else:
+                    parent_row = parse[parse.ind == row.ix['pind']]
+                    if self.parent_condition:
+                        yield parent_row.ix['word'], row.ix[self.sample_type]
+                    else:
+                        yield row.ix[self.sample_type], parent_row.ix['word']
+
+
+    def _create_freqdist(self, corpus_index, transcript_index):
+        if isinstance(self.transcript_collection, CHILDESStemmedSentences):
+            cooccur_gen = self._create_word_sent_cooccurrence_generator(corpus_index, transcript_index)
+        elif isinstance(self.transcript_collection, CHILDESParsedSentences):
+            cooccur_gen = self._create_dependency_cooccurrence_generator(corpus_index, transcript_index)
+
+        return ConditionalFreqDist(cooccur_gen)
+
+    def _create_freqdist_dict(self):
         condfreqdists = {}
-        cooccurrence_generators = []
 
         for corpus_index in self.transcript_collection.get_corpus_indices():
             condfreqdists[corpus_index] = {}
             for transcript_index in self.transcript_collection.get_transcript_indices(corpus_index):
-                cooccur_gen = self._create_cooccurrence_generator(corpus_index, transcript_index)
-
-                if not self.collapse:
-                    condfreqdists[corpus_index][transcript_index] = ConditionalFreqDist(cooccur_gen)
-                else:
-                    cooccurrence_generators.append(cooccur_gen)
-
-        if self.collapse:
-            chained_generators = itertools.chain(*cooccurrence_generators)
-            condfreqdists = ConditionalFreqDist(chained_generators)            
+                condfreqdists[corpus_index][transcript_index] = self._create_freqdist(corpus_index, transcript_index)
 
         self.condfreqdists = condfreqdists
 
 
-    def _dependency_cooccurrence(self, condition):
-        for parse in sentence_collection:
-            pass
+class CHILDESCooccurrenceDataFrame(object):
+
+    def __init__(self, cooccurrence_matrix):
+        self.cooccurrence_matrix = cooccurrence_matrix
+
+        self._create_dataframe()
+
+    def _get_metadata(self, corpus_name, transcript_name):
+        return self.cooccurrence_matrix.transcript_collection[corpus_name][transcript_name].metadata
+
+    def _create_dataframe(self):
+        data = []
+
+        for corpus_name, transcripts in self.cooccurrence_matrix.condfreqdists.iteritems():
+            for transcript_name, dist in transcripts.iteritems():
+                metadata = self._get_metadata(corpus_name, transcript_name)
+                age, mlu, participants = metadata.extract()
+                for word in dist.conditions():
+                    sentence_indices = dist[word].samples()
+                    sentence_indices.sort()
+
+                    word, tag = word
+
+                    for i, sent_index in enumerate(sentence_indices):
+
+                        if i > 0:
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, last_sent_index]
+                        else:
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, -1]
+
+                        data.append(datum)
+
+                        intra_sentence_repeat = dist[word][sent_index] - 1
+
+                        for j in range(intra_sentence_repeat):
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, sent_index]
+                            data.append(datum)
+
+                        last_sent_index = sent_index
+
+        self.dataframe = pandas.DataFrame(data, columns=['word', 'tag', 'age', 'mlu', 'speaker', 'corpus', 'child', 'sent', 'lastsent'])
+
+
+    def write_data(self, file_path):
+        self.dataframe.to_csv(file_path, sep='\t', quoting=1)
+
 
 
 def main(corpus_search_term):
@@ -283,57 +334,19 @@ def main(corpus_search_term):
     childes_corpus_path = os.path.join(user_data_path, 'corpora/CHILDES/')
 
     corpora = CHILDESCorpora(childes_corpus_path)
-    stemmed_sentences = CHILDESStemmedSentences(corpora, corpus_search_term)
-    cooccurrence_matrix = CHILDESCooccurrenceMatrix(stemmed_sentences)
 
-    return corpora, stemmed_sentences, cooccurrence_matrix
+    # stemmed_sentences = CHILDESStemmedSentences(corpora, corpus_search_term)
+    parsed_sentences = CHILDESParsedSentences(corpora, corpus_search_term)
+
+    # cooccurrence_counts = CHILDESCooccurrenceCounts(stemmed_sentences)
+    cooccurrence_counts = CHILDESCooccurrenceCounts(parsed_sentences)
+
+    # cooccurrence_dataframe = CHILDESCooccurrenceDataFrame(cooccurrence_counts)
+
+    # return corpora, stemmed_sentences, cooccurrence_matrix, cooccurrence_dataframe
+    return corpora, parsed_sentences, cooccurrence_counts
 
 if __name__=='__main__':
-    corpora, stemmed_sentences, cooccurrence_matrix = main(sys.argv[1])
-
-    dists = cooccurrence_matrix.condfreqdists
-
-    data = []
-
-    for corpus_name, transcripts in dists.iteritems():
-        for transcript_name, dist in transcripts.iteritems():
-            metadata = stemmed_sentences[corpus_name][transcript_name].metdata
-            age, mlu, participants = metadata.extract()
-            for word in dist.conditions():
-                sentence_indices = dist[word].samples()
-                sentence_indices.sort()
-
-                word, tag = word
-
-                for i, sent_index in enumerate(sentence_indices):
-
-                    if i > 0:
-                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, last_sent_index]
-                    else:
-                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, -1]
-                        
-                    data.append(datum)
-
-                    intra_sentence_repeat = dist[word][sent_index] - 1
-
-                    for j in range(intra_sentence_repeat):
-                        datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, sent_index]
-                        data.append(datum)
-                    
-                    last_sent_index = sent_index
-    
-    data = pandas.DataFrame(data, columns=['word', 'tag', 'age', 'mlu', 'speaker', 'corpus', 'child', 'sent', 'lastsent'])
-
-    data.to_csv('/home/aaronsteven/CHILDESPy/bin/dispersion_counts/'+sys.argv[1]+'.csv', sep='\t', quoting=1)
-
-    # corpus_list = ['bates', 
-    #                'bernstein', 
-    #                'bloom', 
-    #                'bohannon', 
-    #                'brent', 
-    #                'brown', 
-    #                'cartarette', 
-    #                'demetras', 
-    #                'evans', 
-    #                'gleason', 
-    #                'higginson']
+    # corpora, stemmed_sentences, cooccurrence_counts, cooccurrence_dataframe = main(sys.argv[1])
+    corpora, stemmed_sentences, cooccurrence_counts = main(sys.argv[1])
+#    cooccurrence_dataframe.write_data('/home/aaronsteven/CHILDESPy/bin/dispersion_counts/'+sys.argv[1]+'.csv')
