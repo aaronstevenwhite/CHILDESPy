@@ -130,15 +130,15 @@ class CHILDESStemmedSentences(CHILDESTranscriptCollection):
 
 class CHILDESParsedSentences(CHILDESTranscriptCollection):
 
-    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$'):
+    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$', strip_affix=False):
         CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term)
 
-        self.transcripts = self._get_parsed_transcripts(speaker_regex=speaker_regex)
+        self.transcripts = self._get_parsed_transcripts(speaker_regex=speaker_regex, strip_affix=strip_affix)
         self._transcript_iter = (transcript for transcript in self.transcripts)
 
-    def _get_parsed_transcripts(self, speaker_regex):
+    def _get_parsed_transcripts(self, speaker_regex, strip_affix):
         return self._get_transcripts(speaker_regex=speaker_regex, stem=True, tagged=False, relation=True, 
-                                     strip_space=True, replace=True, strip_affix=False)
+                                     strip_space=True, replace=True, strip_affix=strip_affix)
         
 
 class CHILDESTranscript(object):
@@ -163,7 +163,7 @@ class CHILDESTranscript(object):
             for sent in raw_sentence_extractor(part):
                 if sent:
                     if relation:
-                        unit = CHILDESDependencyParse(sent)
+                        unit = CHILDESDependencyParse(sent, strip_affix)
                     else:
                         unit = CHILDESSentence(sent, strip_affix)
                             
@@ -196,7 +196,8 @@ class CHILDESSentence(object):
 
 class CHILDESDependencyParse(object):
 
-    def __init__(self, parse):
+    def __init__(self, parse, strip_affix):
+        self.strip_affix = strip_affix
         self._format_parse(parse)
 
     def _format_parse(self, parse):
@@ -210,11 +211,13 @@ class CHILDESDependencyParse(object):
                 root, affix = node[0].split('-')
 
                 new_node = [root, node[1]] + node[2].split('|') + []
-                new_affix = [affix, 'aff', len(parse)+affix_index, new_node[2], 'AFFIX']
 
-                affix_index += 1
+                if not self.strip_affix:
+                    new_affix = [affix, 'aff', len(parse)+affix_index, new_node[2], 'AFFIX']
 
-                new_parse.append(new_affix)
+                    affix_index += 1
+
+                    new_parse.append(new_affix)
             else:
                 try:
                     new_node = list(node[0:2]) + node[2].split('|')
@@ -281,6 +284,67 @@ class CHILDESCooccurrenceCounts(object):
         self.condfreqdists = condfreqdists
 
 
+class CHILDESFrameCooccurrence(object):
+
+    def __init__(self, transcript_collection, sample_type='pos', depth=1):
+        self.transcript_collection = transcript_collection
+        self.sample_type = sample_type
+        self.depth = depth
+
+        self._create_frame_dataframe()
+
+    def _create_dataframe(self)
+        for corpus_name, transcripts in self.transcript_collection.transcripts.iteritems():
+            for transcript_name, transcript in transcripts.iteritems():
+                metadata = self._get_metadata(corpus_name, transcript_name)
+                age, mlu, participants = metadata.extract()
+                for parse_index, parse in enumerate(transcript):
+                    parse_dataframe = self._create_parse_dataframe(parse)
+                    parse_dataframe.speaker = participants[parse_index]
+                    
+                    parse_dataframe.age = age
+                    parse_dataframe.mlu = mlu
+                    
+                    parse_dataframe.corpus = corpus_name
+                    parse_dataframe.transcript = transcript_name
+                
+
+
+
+    def _create_parse_dataframe(self, parse):
+        frame_cooccurrence = []
+
+        for row_index in parse.T:
+            row = parse.ix[row_index]
+
+            word = row.ix['word']
+            child_rows = parse[parse.pind == row.ix['ind']]
+
+            frame = self._extract_frame(child_rows, self.depth)
+
+            frame_cooccurrence.append([word, frame])
+
+        return DataFrame(frame_cooccurrence, columns=['word', 'frame'])
+
+    def _extract_frame(self, rows, depth):
+        frame = []
+
+        for row_index in rows.T:
+            child_row = rows.ix[row_index]
+            child_item = child_row[self.sample_type]
+
+            sub_rows = rows[rows.pind == child_row.ix['ind']]
+
+            if sub_rows:
+                element = (child_item, self._extract_frame(sub_rows, depth-1))
+            else:
+                element = child_item
+
+            frame.append(element)
+        
+        return tuple(frame)
+
+
 class CHILDESCooccurrenceDataFrame(object):
 
     def __init__(self, cooccurrence_matrix):
@@ -307,16 +371,16 @@ class CHILDESCooccurrenceDataFrame(object):
                     for i, sent_index in enumerate(sentence_indices):
 
                         if i > 0:
-                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, last_sent_index]
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus_name, transcript_name, sent_index, last_sent_index]
                         else:
-                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, -1]
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus_name, transcript_name, sent_index, -1]
 
                         data.append(datum)
 
                         intra_sentence_repeat = dist[word][sent_index] - 1
 
                         for j in range(intra_sentence_repeat):
-                            datum = [word, tag, age, mlu, participants[sent_index], corpus, child, sent_index, sent_index]
+                            datum = [word, tag, age, mlu, participants[sent_index], corpus_name, transcript_name, sent_index, sent_index]
                             data.append(datum)
 
                         last_sent_index = sent_index
@@ -329,6 +393,8 @@ class CHILDESCooccurrenceDataFrame(object):
 
 
 
+
+
 def main(corpus_search_term):
     user_data_path = Downloader.default_download_dir(Downloader())
     childes_corpus_path = os.path.join(user_data_path, 'corpora/CHILDES/')
@@ -336,7 +402,7 @@ def main(corpus_search_term):
     corpora = CHILDESCorpora(childes_corpus_path)
 
     # stemmed_sentences = CHILDESStemmedSentences(corpora, corpus_search_term)
-    parsed_sentences = CHILDESParsedSentences(corpora, corpus_search_term)
+    parsed_sentences = CHILDESParsedSentences(corpora, corpus_search_term, strip_affix=True)
 
     # cooccurrence_counts = CHILDESCooccurrenceCounts(stemmed_sentences)
     cooccurrence_counts = CHILDESCooccurrenceCounts(parsed_sentences)
