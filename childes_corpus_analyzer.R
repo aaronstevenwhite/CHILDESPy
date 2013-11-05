@@ -122,6 +122,10 @@ theme_set(theme_bw())
 p.sentlength <- ggplot(data.cleaned, aes(x=sentlength, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black")
 p.sentlength.dens <- ggplot(data.cleaned, aes(x=sentlength)) + geom_density(h=5)
 
+## order tags by lexical v. functional
+
+data.cleaned$tag.ord <- ordered(data.cleaned$tag, levels=c('n', 'adj', 'v', 'prep', 'mod', 'det', 'pro'))
+
 ## plot histograms showing the distribution of number of utterances between tokens of a word type
 
 p.utterdiff <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
@@ -142,7 +146,7 @@ p.worddiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=worddiff)) + geom_densit
 
 ## plot dot plot showing the correlation between number of utterances and number of words between tokens of a word type
 
-p.utterword <- ggplot(data.cleaned, aes(x=utterdiff, y=worddiff)) + geom_point(alpha=.5) + geom_smooth(method="lm")
+p.utterword <- ggplot(data.cleaned, aes(x=utterdiff, y=worddiff)) + geom_point(alpha=.5) + geom_smooth(method="lm", se=F)
 
 ########################################################################################################
 
@@ -153,16 +157,21 @@ utterword.cor <- cor(data.cleaned$utterdiff, data.cleaned$worddiff)
 ## build intercept-only negative binomial model of word distances
 ## then step-wise constructive-destructive selection procedure using AIC
 
-m.worddiff.interonly <- glm.nb(worddiff ~ 1, data=data.cleaned)
-m.worddiff <- step(m.worddiff.interonly, scope=~tag*age*log(wordfreq))
+#m.worddiff.interonly <- glm.nb(worddiff ~ 1, data=data.cleaned)
+#m.worddiff <- step(m.worddiff.interonly, scope=~tag*age*log(wordfreq))
+
+m.worddiff <- glm.nb(worddiff ~ tag*age*log(wordfreq), data=data.cleaned)
+
 
 ## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
 
 ## build intercept-only negative binomial model of word distances
 ## then step-wise constructive-destructive selection procedure using AIC
 
-m.utterdiff.interonly <- glm.nb(utterdiff ~ 1, data=data.cleaned)
-m.utterdiff <- step(m.utterdiff.interonly, scope=~tag*age*log(wordfreq))
+#m.utterdiff.interonly <- glm.nb(utterdiff ~ 1, data=data.cleaned)
+#m.utterdiff <- step(m.utterdiff.interonly, scope=~tag*age*log(wordfreq))
+
+m.utterdiff <- glm.nb(utterdiff ~ tag*age*log(wordfreq), data=data.cleaned)
 
 ## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
 
@@ -173,24 +182,38 @@ m.utterdiff <- step(m.utterdiff.interonly, scope=~tag*age*log(wordfreq))
 data.cleaned$predword <- predict(m.worddiff)
 data.cleaned$predutter <- predict(m.utterdiff)
 
-## order tags by lexical v. functional
+p.word.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, linetype=tag.ord)) + geom_smooth(method="lm", se=F)
+p.word.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predword, linetype=tag.ord)) + geom_smooth(method="lm", se=F)
 
-data.cleaned$tag <- ordered(data.cleaned$tag, levels=c('n', 'adj', 'v', 'prep', 'mod', 'det', 'pro'))
-
-p.word.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, linetype=tag)) + geom_smooth(method="lm")
-p.word.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predword, linetype=tag)) + geom_smooth(method="lm")
-
-p.utter.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predutter, linetype=tag)) + geom_smooth(method="lm")
-p.utter.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predutter, linetype=tag)) + geom_smooth(method="lm")
+p.utter.pred.freq.tag <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F)
+p.utter.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F)
 
 ########################################################################################################
 
 ## step-wise constructive-destructive selection procedure using AIC of word distances model
 
-m.worddiff.context <- step(m.worddiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+#m.worddiff.context <- step(m.worddiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+#m.worddiff.context.gleason <- step(glm.nb(worddiff ~ tag*age*log(wordfreq), data=subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother')), scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+
+m.worddiff.context <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*context + tag*log(wordfreq)*context + age*log(wordfreq)*context, data=data.cleaned)
+m.worddiff.context.gleason <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*context + tag*log(wordfreq)*context + age*log(wordfreq)*context, data=subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother'))
 
 ## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
 
 ## step-wise constructive-destructive selection procedure using AIC of utterance distances model
 
-m.utterdiff.context <- step(m.utterdiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+#m.utterdiff.context <- step(m.utterdiff, scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+#m.utterdiff.context.gleason <- step(glm.nb(utterdiff ~ tag*age*log(wordfreq), data=subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother')), scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
+
+########################################################################################################
+
+## add predictions for word and utterance differences
+
+data.cleaned$predword <- predict(m.worddiff.context)
+#data.cleaned$predutter <- predict(m.utterdiff.context)
+
+p.word.pred.freq.tag.context <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(~.context)
+p.word.pred.age.tag.context <- ggplot(data.cleaned, aes(x=age, y=predword, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.)
+
+#p.utter.pred.freq.tag.context <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.)
+#p.utter.pred.age.tag.context <- ggplot(data.cleaned, aes(x=age, y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.)
