@@ -69,7 +69,7 @@ class CHILDESMetaData(object):
         return [part for part in participants if re.findall(speaker_regex, part)]
 
     def extract(self):
-        return self.age, self.mlu, self.participants
+        return self.age, self.mlu, self.participants_by_sentence # this only gets added later; so ugly
 
 
 class CHILDESTranscriptCollection(object):
@@ -198,7 +198,7 @@ class CHILDESDependencyParse(object):
 
     def __init__(self, parse, strip_affix):
         self.strip_affix = strip_affix
-        self._format_parse(parse)
+        self.parse = self._format_parse(parse)
 
     def _format_parse(self, parse):
         new_parse = []
@@ -227,7 +227,7 @@ class CHILDESDependencyParse(object):
 
             new_parse.append(new_node)
 
-        self.parse = DataFrame(new_parse, columns=['word', 'pos', 'ind', 'pind', 'relation'])
+        return DataFrame(new_parse, columns=['word', 'pos', 'ind', 'pind', 'relation'])
 
 
 class CHILDESCooccurrenceCounts(object):
@@ -291,25 +291,33 @@ class CHILDESFrameCooccurrence(object):
         self.sample_type = sample_type
         self.depth = depth
 
-        self._create_frame_dataframe()
+        self._create_frame_cooccurrences()
 
-    def _create_dataframe(self)
+    def _get_metadata(self, corpus_name, transcript_name):
+        return self.transcript_collection[corpus_name][transcript_name].metadata
+
+    def _create_frame_cooccurrences(self):
+        frames = []
+
         for corpus_name, transcripts in self.transcript_collection.transcripts.iteritems():
             for transcript_name, transcript in transcripts.iteritems():
                 metadata = self._get_metadata(corpus_name, transcript_name)
                 age, mlu, participants = metadata.extract()
                 for parse_index, parse in enumerate(transcript):
-                    parse_dataframe = self._create_parse_dataframe(parse)
-                    parse_dataframe.speaker = participants[parse_index]
+                    parse_dataframe = self._create_parse_dataframe(parse.parse)
                     
-                    parse_dataframe.age = age
-                    parse_dataframe.mlu = mlu
+                    parse_dataframe['ind'] = parse_index
+                    parse_dataframe['speaker'] = participants[parse_index]
                     
-                    parse_dataframe.corpus = corpus_name
-                    parse_dataframe.transcript = transcript_name
-                
+                    parse_dataframe['age'] = age
+                    parse_dataframe['mlu'] = mlu
+                    
+                    parse_dataframe['corpus'] = corpus_name
+                    parse_dataframe['transcript'] = transcript_name
 
-
+                    frames.append(parse_dataframe)
+        
+        self.frame_cooccurrences = pandas.concat(frames)
 
     def _create_parse_dataframe(self, parse):
         frame_cooccurrence = []
@@ -333,16 +341,24 @@ class CHILDESFrameCooccurrence(object):
             child_row = rows.ix[row_index]
             child_item = child_row[self.sample_type]
 
+            if child_row['ind'] < 0:
+                continue
+
             sub_rows = rows[rows.pind == child_row.ix['ind']]
 
-            if sub_rows:
-                element = (child_item, self._extract_frame(sub_rows, depth-1))
+            if depth - 1:
+                node = [child_item, self._extract_frame(sub_rows, depth-1)]
+                node = '*'.join(node)
             else:
-                element = child_item
+                node = child_item
 
-            frame.append(element)
+            frame.append(node)
         
-        return tuple(frame)
+        frame = '_'.join(frame)
+
+        print frame
+
+        return frame
 
 
 class CHILDESCooccurrenceDataFrame(object):
@@ -361,7 +377,7 @@ class CHILDESCooccurrenceDataFrame(object):
         for corpus_name, transcripts in self.cooccurrence_matrix.condfreqdists.iteritems():
             for transcript_name, dist in transcripts.iteritems():
                 metadata = self._get_metadata(corpus_name, transcript_name)
-                age, mlu, participants = metadata.extract()
+                age, mlu, participants = metadata.extract() ## figure out why this worked with the old CHILDESMetaData.extract
                 for word in dist.conditions():
                     sentence_indices = dist[word].samples()
                     sentence_indices.sort()
@@ -405,7 +421,8 @@ def main(corpus_search_term):
     parsed_sentences = CHILDESParsedSentences(corpora, corpus_search_term, strip_affix=True)
 
     # cooccurrence_counts = CHILDESCooccurrenceCounts(stemmed_sentences)
-    cooccurrence_counts = CHILDESCooccurrenceCounts(parsed_sentences)
+    # cooccurrence_counts = CHILDESCooccurrenceCounts(parsed_sentences)
+    cooccurrence_counts = CHILDESFrameCooccurrence(parsed_sentences, depth=2)
 
     # cooccurrence_dataframe = CHILDESCooccurrenceDataFrame(cooccurrence_counts)
 
