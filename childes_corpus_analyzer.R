@@ -240,10 +240,22 @@ theme_set(theme_bw())
 
 slPalette <- c("#953536", "#f06b30", "#974f27", "#9dac73", "#9aabb2", "#eab41d", "#d2332d")
 
+## create word ranks and plot zipfian distribution
+
+word.freqs <- count(data.cleaned, .(word))
+
+p.wordfreq <- ggplot(word.freqs, aes(x=freq, y=..density..)) + geom_bar(color="black", fill=slPalette[1], binwidth=1) + scale_x_continuous(name='Frequency')
+
+word.freqs.ordered <- word.freqs[with(word.freqs, order(-freq, word)), ]
+word.freqs.ordered$rank <- seq(1, dim(word.freqs)[1]) # this is not actually right since it doesn't take ties into account but it's good enough for plotting
+
+p.zipf.unlogged <- ggplot(word.freqs.ordered, aes(x=rank, y=freq)) + geom_point(position="jitter") + scale_x_continuous(name='Rank') + scale_y_continuous(name='Frequency')
+p.zipf.logged <- ggplot(word.freqs.ordered, aes(x=rank, y=freq)) + geom_point(position="jitter") + scale_x_log10(name='Rank', breaks=c(1, 10, 100, 1000)) + scale_y_log10(name='Frequency', breaks=c(1, 10, 100, 1000, 10000, 100000))
+
 ## plot histograms showing the distribution of sentence lengths
 
-p.sentlength <- ggplot(data.cleaned, aes(x=sentlength, y=..density..)) + geom_bar(binwidth=1, fill=slPalette[1], color="black")
-p.sentlength.dens <- ggplot(data.cleaned, aes(x=sentlength)) + geom_density(h=5)
+p.sentlength <- ggplot(data.cleaned, aes(x=sentlength, y=..density..)) + geom_bar(binwidth=1, fill=slPalette[1], color="black") + scale_x_continuous(name='Sentence length')
+p.sentlength.dens <- ggplot(data.cleaned, aes(x=sentlength)) + geom_density(h=5) + scale_x_continuous(name='Sentence length')
 
 ## order tags by lexical v. functional
 
@@ -251,25 +263,25 @@ data.cleaned$tag.ord <- ordered(data.cleaned$tag, levels=c('n', 'adj', 'v', 'pre
 
 ## plot histograms showing the distribution of number of utterances between tokens of a word type
 
-p.utterdiff <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
-p.utterdiff.tag <- ggplot(data.cleaned, aes(x=utterdiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
-p.utterdiff.tag.dens <- ggplot(data.cleaned, aes(x=utterdiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
+p.utterdiff <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(name='Utterance distance',limits=c(0,50))
+p.utterdiff.tag <- ggplot(data.cleaned, aes(x=utterdiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(name='Utterance distance', limits=c(0,50)) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.utterdiff.tag.dens <- ggplot(data.cleaned, aes(x=utterdiff, linetype=tag)) + geom_density(position="stack") + scale_x_continuous(name='Utterance distance', limits=c(0,50))
 
-p.utterdiff.tag.facet <- ggplot(data.cleaned, aes(x=utterdiff, y=..density..)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
-p.utterdiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=utterdiff)) + geom_density() + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
+p.utterdiff.tag.facet <- ggplot(data.cleaned, aes(x=utterdiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(name='Utterance distance', limits=c(0,50)) + facet_grid(tag~.) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.utterdiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=utterdiff)) + geom_density() + scale_x_continuous(name='Utterance distance', limits=c(0,50)) + facet_grid(tag~.) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
 
 ## plot histograms showing the distribution of number of words between tokens of a word type
 
-p.worddiff <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(limits=c(0,50))
-p.worddiff.tag <- ggplot(data.cleaned, aes(x=worddiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
-p.worddiff.tag.dens <- ggplot(data.cleaned, aes(x=worddiff, linetype=tag)) + geom_density() + scale_x_continuous(limits=c(0,50))
+p.worddiff <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, fill="grey", color="black") + scale_x_continuous(name='Word distance', limits=c(0,50))
+p.worddiff.tag <- ggplot(data.cleaned, aes(x=worddiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black")  + scale_x_continuous(name='Word distance', limits=c(0,50)) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.worddiff.tag.dens <- ggplot(data.cleaned, aes(x=worddiff, fill=tag)) + geom_density(position="stack")  + scale_x_continuous(name='Word distance', limits=c(0,50)) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
 
-p.worddiff.tag.facet <- ggplot(data.cleaned, aes(x=worddiff, y=..density..)) + geom_bar(binwidth=1, color="black") + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
-p.worddiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=worddiff)) + geom_density() + scale_x_continuous(limits=c(0,50)) + facet_grid(tag~.)
+p.worddiff.tag.facet <- ggplot(data.cleaned, aes(x=worddiff, y=..density.., fill=tag)) + geom_bar(binwidth=1, color="black")  + scale_x_continuous(name='Word distance', limits=c(0,50)) + facet_grid(tag~.) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.worddiff.tag.dens.facet <- ggplot(data.cleaned, aes(x=worddiff, fill=tag)) + geom_density()  + scale_x_continuous(name='Word distance', limits=c(0,50)) + facet_grid(tag~.) + scale_fill_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
 
 ## plot dot plot showing the correlation between number of utterances and number of words between tokens of a word type
 
-p.utterword <- ggplot(data.cleaned, aes(x=utterdiff, y=worddiff)) + geom_point(alpha=.5) + geom_smooth(method="lm", se=F, color=slPalette[7])
+p.utterword <- ggplot(data.cleaned, aes(x=utterdiff, y=worddiff)) + geom_point(alpha=.5) + geom_smooth(method="lm", se=F, color=slPalette[7])  + scale_y_continuous(name='Word distance') + scale_x_continuous(name='Utter distance')
 
 ########################################################################################################
 
@@ -319,7 +331,9 @@ p.utter.pred.age.tag <- ggplot(data.cleaned, aes(x=age, y=predutter, color=tag.o
 #m.worddiff.context.gleason <- step(glm.nb(worddiff ~ tag*age*log(wordfreq), data=subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother')), scope=list(lower=~tag*age*log(wordfreq), upper=~tag*age*log(wordfreq)*context))
 
 m.worddiff.context <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*context + tag*log(wordfreq)*context + age*log(wordfreq)*context, data=data.cleaned)
-m.worddiff.context.gleason <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*context + tag*log(wordfreq)*context + age*log(wordfreq)*context, data=subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother'))
+
+gleason.cleaned <- subset(data.cleaned, corpus=='Dinner' | corpus=='Father' | corpus=='Mother')
+m.worddiff.context.gleason <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*context + tag*log(wordfreq)*context + age*log(wordfreq)*context, data=gleason.cleaned)
 
 ## model with all interactions best: worddiff ~ tag*age*log(wordfreq)
 
@@ -335,15 +349,14 @@ m.worddiff.context.gleason <- glm.nb(worddiff ~ tag*age*log(wordfreq) + tag*age*
 data.cleaned$predword <- predict(m.worddiff.context)
 #data.cleaned$predutter <- predict(m.utterdiff.context)
 
-
-p.word.pred.freq.tag.context <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
-p.word.pred.age.tag.context <- ggplot(data.cleaned, aes(x=age, y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro')) + facet_grid(context~.)
+p.word.pred.freq.tag.context <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(.~context) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.word.pred.age.tag.context <- ggplot(data.cleaned, aes(x=age, y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro')) + facet_grid(.~context)
 
 #p.utter.pred.freq.tag.context <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.)
 #p.utter.pred.age.tag.context <- ggplot(data.cleaned, aes(x=age, y=predutter, linetype=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.)
 
-data.cleaned$predword <- predict(m.worddiff.context.gleason)
+gleason.cleaned$predword <- predict(m.worddiff.context.gleason)
 #data.cleaned$predutter <- predict(m.utterdiff.context.gleason)
 
-p.word.pred.freq.tag.context.gleason <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(context~.) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
-p.word.pred.age.tag.context.gleason <- ggplot(data.cleaned, aes(x=age, y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro')) + facet_grid(context~.)
+p.word.pred.freq.tag.context.gleason <- ggplot(data.cleaned, aes(x=log(wordfreq), y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + facet_grid(.~context) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro'))
+p.word.pred.age.tag.context.gleason <- ggplot(data.cleaned, aes(x=age, y=predword, color=tag.ord)) + geom_smooth(method="lm", se=F) + scale_color_manual(name='Tag', values=slPalette, labels=c('N', 'A', 'V', 'P', 'Mod', 'Det', 'Pro')) + facet_grid(.~context)
