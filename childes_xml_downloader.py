@@ -90,3 +90,4 @@ def main():
 
 if __name__ == '__main__':
     childes_root = main()
+    childes_root.download()
