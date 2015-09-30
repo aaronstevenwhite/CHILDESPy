@@ -14,19 +14,25 @@ from nltk.probability import FreqDist, ConditionalFreqDist
 
 from pandas import DataFrame
 
-class CHILDESCorpora(object):
+class CHILDESCollection(object):
+    '''a collection of CHILDES corpora'''
+    
+    def __init__(self, corpus_root):
+        self.corpus_root = corpus_root
+        self.corpus_readers = [CHILDESCorpusReader(root, fileids[root]) for root in self._walk_corpus()]
 
-    def __init__(self, childes_corpus_path):
-        corpus_walker = os.walk(childes_corpus_path)
+    def _walk_corpus(self):
+        '''walk down corpus file hierarchy, collecting children'''
+        corpus_walker = os.walk(self.corpus_root)
+        get_children = lambda xml_files: [os.path.join(child) for child in xml_files]
 
-        fileids = {parent : [os.path.join(child) for child in xml_files] for parent, _, xml_files in corpus_walker if xml_files}
-
-        self.corpus_readers = [CHILDESCorpusReader(root, fileids[root]) for root in fileids]
-
+        return {parent : get_children(d) for parent, _, d in corpus_walker if d}
+ 
     def search(self, corpus_name):
-        matches = [reader for reader in self.corpus_readers if re.findall(corpus_name.lower(), reader.root.lower())]
+        '''get all the corpora matching corpus_name'''
+        matches = lambda x: re.findall(corpus_name.lower(), x)
 
-        return matches
+        return [reader for reader in self.corpus_readers if matches(reader.root.lower())]
 
 
 class CHILDESMetaData(object):
@@ -284,7 +290,7 @@ def main():
     user_data_path = Downloader.default_download_dir(Downloader())
     childes_corpus_path = os.path.join(user_data_path, 'corpora/CHILDES/')
 
-    corpora = CHILDESCorpora(childes_corpus_path)
+    corpora = CHILDESCollection(childes_corpus_path)
 
     return corpora
 
