@@ -23,6 +23,7 @@ class CHILDESCollection(object):
 
     def _walk_corpus(self):
         '''walk down corpus file hierarchy, collecting children'''
+        
         corpus_walker = os.walk(self.corpus_root)
         get_children = lambda xml_files: [os.path.join(child) for child in xml_files]
 
@@ -30,6 +31,7 @@ class CHILDESCollection(object):
  
     def search(self, corpus_name):
         '''get all the corpora matching corpus_name'''
+        
         matches = lambda x: re.findall(corpus_name.lower(), x)
 
         return [reader for reader in self.corpus_readers if matches(reader.root.lower())]
