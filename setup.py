@@ -1,0 +1,22 @@
+from setuptools import setup
+
+setup(name='CHILDESPy',
+      version='0.1',
+      description='Classes for easily searching and summarizing CHILDES corpora',
+      url='http://github.com/aaronstevenwhite/CHILDESPy',
+      author='Aaron Steven White',
+      author_email='aswhite@jhu.edu',
+      license='MIT',
+      packages=['childespy'],
+      install_requires=['os', 're',
+                        'itertools',
+                        'collections',
+                        'requests',
+                        'bs4',
+                        'zipfile',
+                        'StringIO',
+                        'nltk',
+                        'numpy',
+                        'scipy',
+                        'pandas'],
+      zip_safe=False)
