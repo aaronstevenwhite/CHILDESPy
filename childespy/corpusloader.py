@@ -18,19 +18,22 @@ class CHILDESCollection(object):
     '''a collection of CHILDES corpora'''
     
     def __init__(self, corpus_root):
+        
         self.corpus_root = corpus_root
-        self.corpus_readers = [CHILDESCorpusReader(root, fileids[root]) for root in self._walk_corpus()]
+        self.corpus_readers = [CHILDESCorpusReader(root, fids) for root, fids in self._walk_corpus()]
 
     def _walk_corpus(self):
         '''walk down corpus file hierarchy, collecting children'''
         
-        corpus_walker = os.walk(self.corpus_root)
+        collection_walker = os.walk(self.corpus_root)
         get_children = lambda xml_files: [os.path.join(child) for child in xml_files]
 
-        return {parent : get_children(d) for parent, _, d in corpus_walker if d}
+        collection_dict = {parent : get_children(d) for parent, _, d in collection_walker if d}
+
+        return collection_dict.iteritems()
  
     def search(self, corpus_name):
-        '''get all the corpora matching corpus_name'''
+        '''get all the corpora matching the corpus_name regex'''
         
         matches = lambda x: re.findall(corpus_name.lower(), x)
 
@@ -38,7 +41,8 @@ class CHILDESCollection(object):
 
 
 class CHILDESMetaData(object):
-
+    '''the metadata for a particular corpus'''
+    
     def __init__(self, corpus):
         self.corpus = corpus
         self.corpus_name = self._extract_corpus_name(corpus)
@@ -83,10 +87,11 @@ class CHILDESMetaData(object):
         return self.age, self.mlu, self.participants_by_sentence # this only gets added later; so ugly
 
 
-class CHILDESTranscriptCollection(object):
+class CHILDESCorpus(object):
 
-    def __init__(self, corpora, corpus_search_term, 
-                 speaker_regex, stem, tagged, relation, strip_space, replace, strip_affix):
+    def __init__(self, corpora, corpus_search_term, speaker_regex, stem,
+                 tagged, relation, strip_space, replace, strip_affix):
+        
         self._corpora = corpora
         self._corpus_search_term = corpus_search_term
 
@@ -105,7 +110,8 @@ class CHILDESTranscriptCollection(object):
         return self._transcript_iter.next()
 
 
-    def _create_transcripts(self, speaker_regex, stem, tagged, relation, strip_space, replace, strip_affix):
+    def _create_transcripts(self, speaker_regex, stem, tagged, relation,
+                            strip_space, replace, strip_affix):
 
         self.transcripts = defaultdict(dict)
 
@@ -119,9 +125,11 @@ class CHILDESTranscriptCollection(object):
                 transcript_metadata = metadata_parent.create_new_instance(fid, speaker_regex)
 
                 if tagged:
-                    raw_sentence_extractor = lambda part: corpus.tagged_sents(fid, part, stem, relation, strip_space, replace)
+                    raw_sentence_extractor = lambda part: corpus.tagged_sents(fid, part, stem, relation,
+                                                                              strip_space, replace)
                 else:
-                    raw_sentence_extractor = lambda part: corpus.sents(fid, part, stem, relation, strip_space, replace)
+                    raw_sentence_extractor = lambda part: corpus.sents(fid, part, stem, relation,
+                                                                       strip_space, replace)
 
                 fid_stripped = os.path.splitext(fid)[0]
 
@@ -142,10 +150,10 @@ class CHILDESTranscriptCollection(object):
         return self.transcripts_indices[corpus_index].keys()
 
 
-class CHILDESSentences(CHILDESTranscriptCollection):
+class CHILDESSentences(CHILDESCorpus):
 
     def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$', tagged=True, strip_affix=True):
-        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term,
+        CHILDESCorpus.__init__(self, corpora, corpus_search_term,
                                              speaker_regex=speaker_regex,
                                              stem=False,
                                              tagged=tagged,
@@ -155,10 +163,12 @@ class CHILDESSentences(CHILDESTranscriptCollection):
                                              strip_affix=strip_affix)
 
 
-class CHILDESStemmedSentences(CHILDESTranscriptCollection):
+class CHILDESStemmedSentences(CHILDESCorpus):
 
-    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$', tagged=True, strip_affix=True):
-        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term,
+    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$',
+                 tagged=True, strip_affix=True):
+        
+        CHILDESCorpus.__init__(self, corpora, corpus_search_term,
                                              speaker_regex=speaker_regex,
                                              stem=True,
                                              tagged=tagged,
@@ -168,10 +178,12 @@ class CHILDESStemmedSentences(CHILDESTranscriptCollection):
                                              strip_affix=strip_affix)
 
 
-class CHILDESParsedSentences(CHILDESTranscriptCollection):
+class CHILDESParsedSentences(CHILDESCorpus):
 
-    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$', strip_affix=False):
-        CHILDESTranscriptCollection.__init__(self, corpora, corpus_search_term,
+    def __init__(self, corpora, corpus_search_term, speaker_regex='^(?:(?!CHI).)*$',
+                 strip_affix=False):
+        
+        CHILDESCorpus.__init__(self, corpora, corpus_search_term,
                                              speaker_regex=speaker_regex,
                                              stem=True,
                                              tagged=False,
@@ -184,6 +196,7 @@ class CHILDESParsedSentences(CHILDESTranscriptCollection):
 class CHILDESTranscript(object):
 
     def __init__(self, raw_sentence_extractor, metadata, relation, strip_affix):
+
         self.metadata = metadata
 
         self.sentences = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
@@ -262,31 +275,85 @@ class CHILDESDependencyParse(object):
     def _format_parse(self, parse):
         new_parse = []
 
-        bad_index = -1
-        affix_index = 2
+        self._parse_length = len(parse)
+        
+        self._bad_index = -1
+        self._affix_index = 1
 
         for node in parse:
-            if re.findall('-[a-zA-Z1-9]*$', node[0]):
-                root, affix = node[0].split('-')
+            node, func_morph = self._separate_functional_morpheme(node)
+            root, affix = self._separate_affix_morpheme(node)
 
-                new_node = [root, node[1]] + node[2].split('|') + []
+            new_parse.append(root)
 
-                if not self.strip_affix:
-                    new_affix = [affix, 'aff', len(parse)+affix_index, new_node[2], 'AFFIX']
+            if affix is not None:
+                new_parse.append(affix)
 
-                    affix_index += 1
-
-                    new_parse.append(new_affix)
-            else:
-                try:
-                    new_node = list(node[0:2]) + node[2].split('|')
-                except IndexError:
-                    new_node = list(node[0:2]) + [bad_index]*2 + ['BADINDEX']
-                    bad_index -= 1
-
-            new_parse.append(new_node)
+            if func_morph is not None:
+                new_parse.append(func_morph)
 
         return np.array(new_parse)
+
+    def _update_affix_index(self):
+        self._affix_index += 1
+        
+        return self._parse_length+self._affix_index
+    
+    def _separate_functional_morpheme(self, node):
+        
+        if re.findall('~[a-zA-Z1-9]*$', node[0]):
+            lemma1, lemma2 = node[0].split('~')
+            tag1, tag2 = node[1].split('~')
+
+            node = [lemma1, tag1, node[2]]
+
+            functional = [lemma2, tag2, self._update_affix_index(),
+                          node[2].split('|')[0], 'FUNCTIONAL']
+
+            self._affix_index += 1
+
+            return node, functional   
+
+        else: return node, None
+
+    def _separate_affix_morpheme(self, node):
+
+        affix = None
+        
+        if re.findall('-[a-zA-Z1-9]*$', node[0]):
+
+            lemma_root, affix = node[0].split('-')
+
+            root = [lemma_root, node[1]] + node[2].split('|')
+
+            if not self.strip_affix:
+
+                affix = [affix, 'aff', self._update_affix_index(),
+                         root[2], 'AFFIX']
+
+                self._affix_index += 1
+
+        else:
+            
+            try:
+                root = list(node[0:2]) + node[2].split('|')
+            except IndexError:
+                root = list(node[0:2]) + [self._bad_index]*2 + ['BADINDEX']
+                self._bad_index -= 1
+
+        return root, affix
+
+    
+    def has_dependency(self, dependency):
+        '''check for whether sentence has particular dependency'''
+        
+        return any([dependency == d for d in self.sentence[:,4]])
+
+    def get_parent(self, lemma=None, dependency=None):
+
+        parent_index = self.sentence[:,0]
+
+        
 
 def main():
     user_data_path = Downloader.default_download_dir(Downloader())
@@ -297,10 +364,23 @@ def main():
     return corpora
 
 if __name__=='__main__':
+    import argparse
+
+    ## initialize parser
+    parser = argparse.ArgumentParser(description='Load CHILDES')
+
+    ## file handling
+    parser.add_argument('--corpus', 
+                        type=str, 
+                        default='.*')
+
+    ## parse arguments
+    args = parser.parse_args()
+
+    ## load corpora
     corpora = main()
 
-    corpus_search_term = sys.argv[1]
-
-    unstemmed_sentences = CHILDESSentences(corpora, corpus_search_term)
-    stemmed_sentences = CHILDESStemmedSentences(corpora, corpus_search_term)
-    parsed_sentences = CHILDESParsedSentences(corpora, corpus_search_term)
+    ## construct APIs to different annotations of those corpora
+    unstemmed_sentences = CHILDESSentences(corpora, args.corpus)
+    stemmed_sentences = CHILDESStemmedSentences(corpora, args.corpus)
+    parsed_sentences = CHILDESParsedSentences(corpora, args.corpus)
