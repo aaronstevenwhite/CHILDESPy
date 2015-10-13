@@ -29,7 +29,7 @@ class CHILDESDir(object):
         self.local_root = local_root
         self.name = os.path.basename(local_root.strip('/')).lower()
         
-        self.corpora = self._get_corpora(remote_children, local_children)
+        self.corpora = self._get_corpora()
 
     def _request_children(self):
         '''
@@ -84,7 +84,7 @@ class CHILDESDir(object):
         for corpus in self.corpora.values():
             corpus.download()
 
-        print '{} successfully downloaded and extracted'.format(self.name)
+        print 'successfully downloaded and extracted\t' + self.name
 
     def corpora_names(self):
         '''get names of corpora directly below this root'''

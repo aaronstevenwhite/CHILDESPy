@@ -202,6 +202,9 @@ class CHILDESTranscript(object):
         self.sentences = self._get_sentences(raw_sentence_extractor, relation, strip_affix)
         self._sentence_iter = (sentence for sentence in self.sentences)
 
+    def __getitem__(self, index):
+        return self.sentences[index]
+        
     def __iter__(self):
         return self
 
@@ -239,7 +242,7 @@ class CHILDESSentence(object):
 
     def __repr__(self):
         return self.sentence.__repr__()
-
+    
     def __iter__(self):
         return self
 
@@ -271,9 +274,9 @@ class CHILDESDependencyParse(object):
 
     def __repr__(self):
         return self.sentence.__repr__()
-
+    
     def _format_parse(self, parse):
-        new_parse = []
+        new_parse = [['ROOT', 'ROOT', 0, 0, 'NONE']]
 
         self._parse_length = len(parse)
         
@@ -292,8 +295,15 @@ class CHILDESDependencyParse(object):
             if func_morph is not None:
                 new_parse.append(func_morph)
 
-        return np.array(new_parse)
+        parse_df = pandas.DataFrame(new_parse,
+                                    columns=['lemma', 'pos', 'ind',
+                                             'pind', 'gramrel'])
 
+        parse_df.ind = parse_df.ind.astype(int)
+        parse_df.pind = parse_df.pind.astype(int)
+
+        return parse_df
+        
     def _update_affix_index(self):
         self._affix_index += 1
         
@@ -343,17 +353,59 @@ class CHILDESDependencyParse(object):
 
         return root, affix
 
+
+    def has_lemma(self, lemma):
+        '''check for whether sentence has particular lemma in it'''
+        
+        return (self.sentence.lemma==lemma).any()
+
+    def has_pos(self, pos):
+        '''check for whether sentence has a word with a particular part-of-speech'''
+        
+        return (self.sentence.pos==pos).any()
+            
+    def has_grammmatical_relation(self, gramrel):
+        '''check for whether sentence has particular grammatical relation in it'''
+        
+        return (self.sentence.gramrel==gramrel).any()
+
+    def _selector(self, lemma, pos, gramrel):
+        '''select a node in the parse based on the lemma, pos, or gramrel in that line'''
+        
+        bool_index = self.sentence.lemma==self.sentence.lemma
+
+        if lemma is not None:
+            bool_index = np.logical_and(bool_index, self.sentence.lemma==lemma)
+
+        if pos is not None:
+            bool_index = np.logical_and(bool_index, self.sentence.pos==pos)
+
+        if gramrel is not None:
+            bool_index = np.logical_and(bool_index, self.sentence.gramrel==gramrel)
+
+        return bool_index
     
-    def has_dependency(self, dependency):
-        '''check for whether sentence has particular dependency'''
+    def get_parent(self, lemma=None, pos=None, gramrel=None):
+        '''
+        get the (unique) parent of a node in the parse
+        based on that node's lemma, pos, or gramrel
+        '''
         
-        return any([dependency == d for d in self.sentence[:,4]])
-
-    def get_parent(self, lemma=None, dependency=None):
-
-        parent_index = self.sentence[:,0]
-
+        selected = self.sentence[self._selector(lemma, pos, gramrel)]
+        parent_indices = selected.pind
         
+        return [(selected.iloc[i], self.sentence[self.sentence.ind == pind]) for i, pind in enumerate(parent_indices)]
+
+    def get_child(self, lemma=None, pos=None, gramrel=None):
+        '''
+        get the (nonunique) children of a node in the parse
+        based on that node's lemma, pos, or gramrel
+        '''
+        
+        selected = self.sentence[self._selector(lemma, pos, gramrel)]
+        indices = selected.ind
+
+        return [(selected.iloc[i], self.sentence[self.sentence.pind == ind]) for i, ind in enumerate(indices)]
 
 def main():
     user_data_path = Downloader.default_download_dir(Downloader())
