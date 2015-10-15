@@ -45,13 +45,7 @@ class CHILDESMetaData(object):
     
     def __init__(self, corpus):
         self.corpus = corpus
-        self.corpus_name = self._extract_corpus_name(corpus)
-
-    def _extract_corpus_name(self, corpus):
-        corpus_path = corpus.root.title()
-        corpus_name = os.path.basename(corpus_path)
-        
-        return corpus_name
+        self.corpus_name = os.path.basename(corpus.root.title())
 
     def create_new_instance(self, fid, speaker_regex): ## I don't like how far speaker_regex has to get passed down; should be an attribute?
         transcript_metadata = CHILDESMetaData(self.corpus)
@@ -369,43 +363,84 @@ class CHILDESDependencyParse(object):
         
         return (self.sentence.gramrel==gramrel).any()
 
-    def _selector(self, lemma, pos, gramrel):
-        '''select a node in the parse based on the lemma, pos, or gramrel in that line'''
+    def has_which_lemmas(self, lemmas):
+        '''get the subset of lemmas that are contained in sentence'''
         
-        bool_index = self.sentence.lemma==self.sentence.lemma
+        return np.intersect1d(self.sentence.lemma, lemmas)
+
+    def has_which_poses(self, poses):
+        '''get the subset of poses that are contained in sentence'''
+        
+        return np.intersect1d(self.sentence.pos, poses)
+            
+    def has_which_grammmatical_relations(self, gramrels):
+        '''get the subset of gramrels that are contained in sentence'''
+
+        return np.intersect1d(self.sentence.gramrel, gramrels)
+    
+    def _selector(self, sentence, lemma, pos, ind, pind, gramrel):
+        '''select a node in the parse based on the lemma, pos, or gramrel in that line'''
+
+        sentence = self.sentence if sentence is None else sentence
+        
+        bool_index = sentence.lemma==sentence.lemma
 
         if lemma is not None:
-            bool_index = np.logical_and(bool_index, self.sentence.lemma==lemma)
+            bool_new = sentence.lemma.map(lambda l: l in lemma)
+            bool_index = np.logical_and(bool_index, bool_new)
 
         if pos is not None:
-            bool_index = np.logical_and(bool_index, self.sentence.pos==pos)
+            bool_new = sentence.pos.map(lambda p: p in pos)
+            bool_index = np.logical_and(bool_index, bool_new)
 
+        if ind is not None:
+            bool_new = sentence.ind.map(lambda i: i in ind)
+            bool_index = np.logical_and(bool_index, bool_new)
+
+        if pind is not None:
+            bool_new = sentence.pind.map(lambda j: j in pind)
+            bool_index = np.logical_and(bool_index, bool_new)
+                        
         if gramrel is not None:
-            bool_index = np.logical_and(bool_index, self.sentence.gramrel==gramrel)
+            bool_new = sentence.gramrel.map(lambda g: g in gramrel)
+            bool_index = np.logical_and(bool_index, bool_new)
 
-        return bool_index
+        return sentence[bool_index]
     
-    def get_parent(self, lemma=None, pos=None, gramrel=None):
+    def get_parent(self, lemma=None, pos=None, ind=None, gramrel=None,
+                   parlemma=None, parpos=None, pargramrel=None):
         '''
         get the (unique) parent of a node in the parse
         based on that node's lemma, pos, or gramrel
         '''
-        
-        selected = self.sentence[self._selector(lemma, pos, gramrel)]
-        parent_indices = selected.pind
-        
-        return [(selected.iloc[i], self.sentence[self.sentence.ind == pind]) for i, pind in enumerate(parent_indices)]
 
-    def get_child(self, lemma=None, pos=None, gramrel=None):
+        selected = self._selector(None, lemma, pos, ind, None, gramrel)
+        parent_indices = selected.pind
+
+        def child_parent(chiloc, parind):
+            parent = self._selector(None, parlemma, parpos, parind, None, pargramrel)
+
+            return (selected.iloc[chiloc], parent)
+        
+        return [child_parent(chiloc, parind) for chiloc, parind in enumerate(parent_indices)]
+
+    def get_children(self, lemma=None, pos=None, ind=None, gramrel=None,
+                     chilemma=None, chipos=None, chigramrel=None):
         '''
         get the (nonunique) children of a node in the parse
         based on that node's lemma, pos, or gramrel
         '''
         
-        selected = self.sentence[self._selector(lemma, pos, gramrel)]
+        selected = self._selector(None, lemma, pos, ind, None, gramrel)
         indices = selected.ind
 
-        return [(selected.iloc[i], self.sentence[self.sentence.pind == ind]) for i, ind in enumerate(indices)]
+        def parent_children(parloc, chiind):
+            children = self._selector(None, chilemma, chipos, None, chiind, chigramrel)
+
+            return (selected.iloc[parloc], children)
+
+        
+        return [parent_children(parloc, [chiind]) for parloc, chiind in enumerate(indices)]
 
 def main():
     user_data_path = Downloader.default_download_dir(Downloader())
