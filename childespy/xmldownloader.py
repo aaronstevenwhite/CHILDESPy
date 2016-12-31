@@ -20,8 +20,6 @@ import StringIO
 import requests
 import bs4
 
-from nltk.downloader import Downloader
-
 class CHILDESDir(object):
     
     def __init__(self, remote_root, local_root):
@@ -108,19 +106,3 @@ class CHILDESCorpus(object):
         
         zfile = zipfile.ZipFile(strio)
         zfile.extractall(path=self.local_root)
-
-
-def main(childes_xml_remote_root='http://childes.psy.cmu.edu/data-xml/'):
-    user_data_path = Downloader.default_download_dir(Downloader())
-    childes_corpus_path = os.path.join(user_data_path, 'corpora/CHILDES/')
-
-    try:
-        os.makedirs(childes_corpus_path)
-    except OSError:
-        pass
-
-    CHILDESDir(childes_xml_remote_root, childes_corpus_path).download()
-
-
-if __name__ == '__main__':
-    main()

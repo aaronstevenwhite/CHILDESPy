@@ -1,2 +1,3 @@
 from .xmldownloader import CHILDESDir
-from .corpusloader import *
+from .sentence import CHILDESSentence
+from .corpus import CHILDESCorpus

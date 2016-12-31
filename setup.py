@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='CHILDESPy',
-      version='0.1dev',
+      version='0.1dev0',
       description='Classes for easily searching and summarizing CHILDES corpora',
       url='http://github.com/aaronstevenwhite/CHILDESPy',
       author='Aaron Steven White',
@@ -14,4 +14,6 @@ setup(name='CHILDESPy',
                         'numpy',
                         'scipy',
                         'pandas'],
+      scripts=['bin/download_childes.py',
+               'bin/load_childes_corpus.py'],      
       zip_safe=False)

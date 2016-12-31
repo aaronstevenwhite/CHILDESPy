@@ -20,4 +20,4 @@ cd CHILDESPy
 python setup.py install
 ```
 
-Please note that this package is under active development and will undergo possibly major changes within version.
+Please note that this package is under active development and will undergo possibly major changes.
