@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='CHILDESPy',
-      version='0.1dev0',
+      version='0.1a1',
       description='Classes for easily searching and summarizing CHILDES corpora',
       url='http://github.com/aaronstevenwhite/CHILDESPy',
       author='Aaron Steven White',
